@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <cxxabi.h>
+#include <optional>
 #include <Poco/String.h>
 #include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
@@ -68,7 +69,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     }
 }
 
-std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace)
+std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace, ExceptionFormatter &&formatter)
 {
     std::stringstream stream;
 
@@ -78,15 +79,17 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
     }
     catch (const Exception & e)
     {
-        stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace) << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+        *formatter.version = VERSION_STRING VERSION_OFFICIAL;
+        return getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace, std::move(formatter));
     }
     catch (const Poco::Exception & e)
     {
         try
         {
-            stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-                << ", e.displayText() = " << e.displayText()
-                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+            formatter.code = ErrorCodes::POCO_EXCEPTION;
+            *formatter.class_name = "Poco::Exception";
+            *formatter.version = VERSION_STRING VERSION_OFFICIAL;
+            *formatter.message = "e.code() = " + toString(e.code()) + ", e.displayText() = " + e.displayText();
         }
         catch (...) {}
     }
@@ -94,13 +97,14 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
     {
         try
         {
-            int status = 0;
-            auto name = demangle(typeid(e).name(), status);
-
+            formatter.code = ErrorCodes::STD_EXCEPTION;
+            *formatter.class_name = "std::exception";
+            *formatter.version = VERSION_STRING VERSION_OFFICIAL;
+            int status;
+            *formatter.type = demangle(typeid(e).name(), status);
             if (status)
-                name += " (demangling status: " + toString(status) + ")";
-
-            stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what() << ", version = " << VERSION_STRING << VERSION_OFFICIAL;
+                *formatter.demangling_status = status;
+            *formatter.message = "e.what() = " + std::string(e.what());
         }
         catch (...) {}
     }
@@ -108,19 +112,20 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
     {
         try
         {
+            formatter.code = ErrorCodes::UNKNOWN_EXCEPTION;
+            *formatter.class_name = "Unknown exception";
             int status = 0;
-            auto name = demangle(abi::__cxa_current_exception_type()->name(), status);
-
+            *formatter.type = demangle(abi::__cxa_current_exception_type()->name(), status);
             if (status)
-                name += " (demangling status: " + toString(status) + ")";
-
-            stream << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+                *formatter.demangling_status = status;
+            *formatter.version = VERSION_STRING VERSION_OFFICIAL;
         }
         catch (...) {}
     }
 
-    return stream.str();
+    return formatter.format();
 }
+
 
 
 int getCurrentExceptionCode()
@@ -180,10 +185,8 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
     }
 }
 
-std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
+std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace, ExceptionFormatter &&formatter)
 {
-    std::stringstream stream;
-
     try
     {
         std::string text = e.displayText();
@@ -200,17 +203,19 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
             }
         }
 
-        stream << "Code: " << e.code() << ", e.displayText() = " << text;
+        formatter.code = e.code();
+        *formatter.type = e.name();
+        *formatter.message = e.message();
 
         if (with_stacktrace && !has_embedded_stack_trace)
-            stream << ", Stack trace:\n\n" << e.getStackTrace().toString();
+            *formatter.stack_trace = e.getStackTrace().toString();
     }
     catch (...) {}
 
-    return stream.str();
+    return formatter.format();
 }
 
-std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
+std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace, ExceptionFormatter &&formatter)
 {
     try
     {
@@ -218,7 +223,7 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
     }
     catch (...)
     {
-        return getCurrentExceptionMessage(with_stacktrace);
+        return getCurrentExceptionMessage(with_stacktrace, false, std::move(formatter));
     }
 }
 

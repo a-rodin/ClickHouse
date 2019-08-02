@@ -706,12 +706,18 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
     Output used_output;
 
+    /// Send errors to the client in JSON format
+    bool json_errors = true;
+
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;
 
     try
     {
-        response.setContentType("text/plain; charset=UTF-8");
+        if (json_errors)
+            response.setContentType("application/json; charset=UTF-8");
+        else
+            response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
         /// For keep-alive to work.
         if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)

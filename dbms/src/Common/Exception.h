@@ -3,10 +3,13 @@
 #include <cerrno>
 #include <vector>
 #include <memory>
+#include <utility>
 
 #include <Poco/Exception.h>
 
 #include <Common/StackTrace.h>
+#include <Common/ExceptionFormatter.h>
+#include <Common/ExceptionFormatterDefault.h>
 
 namespace Poco { class Logger; }
 
@@ -86,8 +89,9 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
   * with_stacktrace - prints stack trace for DB::Exception.
   * check_embedded_stacktrace - if DB::Exception has embedded stacktrace then
   *  only this stack trace will be printed.
+  * formatter - formatter to use. Default is the text formatter.
   */
-std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace = false);
+std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace = false, ExceptionFormatter &&formatter = std::move(ExceptionFormatterDefault()));
 
 /// Returns error code from ErrorCodes
 int getCurrentExceptionCode();
@@ -117,8 +121,8 @@ struct ExecutionStatus
 void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message = "");
 void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::string & start_of_message = "");
 
-std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
-std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace);
+std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false, ExceptionFormatter &&formatter = ExceptionFormatterDefault());
+std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace, ExceptionFormatter &&formatter = ExceptionFormatterDefault());
 
 
 void rethrowFirstException(const Exceptions & exceptions);
